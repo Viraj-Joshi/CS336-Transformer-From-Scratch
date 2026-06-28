@@ -84,7 +84,7 @@ def process_chunk(
     return local_counts
 
 ### PRETOKENIZE ###
-def naive_pretokenize(input_path,special_tokens):
+def naive_pretokenize(input_path, special_tokens):
     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
     SPECIAL_PAT = "|".join(re.escape(spt) for spt in special_tokens)
     counts = defaultdict(int) # map tuples of pretokenized chunks to frequencies
@@ -144,88 +144,50 @@ def train_bpe(
     # for small files, no need for multiprocessing
     file_size = os.path.getsize(input_path) # get file size in bytes
     if file_size < 1_000_000:
-        counts = naive_pretokenize(input_path,special_tokens)
+        counts = naive_pretokenize(input_path, special_tokens)
     else:
         counts = parallel_pretokenize(input_path,special_tokens, num_processes)
 
     ### BPE over each pretokenized chunks (different than splitting by special tokens)
 
-    # build co-occurences counts by counting over all byte pairs
-    # as well as mapping between each cooccurence to what chunks it is in 
+    # get co-occurences by counting over all byte pairs
     def get_stats(counts):
-        cooccurence_counts = defaultdict(int)
-        cooccurence_to_chunk_ids = defaultdict(set)
-        id_to_chunk = defaultdict(list)
-        for i, (key,count) in enumerate(counts.items()):
-            id_to_chunk[i] = key
+        aggregated_cooccurences = defaultdict(int)
+        for key,count in counts.items():
             for c1,c2 in zip(key,key[1:]):
-                cooccurence_to_chunk_ids[(c1,c2)].add(i)
-                cooccurence_counts[(c1,c2)]+=count
-        return cooccurence_counts, cooccurence_to_chunk_ids, id_to_chunk
-    
-    def remove_counts(chunk,chunk_id):
-        local_cooccurences = defaultdict(int)
-        for c1,c2 in zip(chunk,chunk[1:]):
-            local_cooccurences[(c1,c2)]+=1
-        
-        chunk_count = counts[chunk]
-        for (c1,c2), local_freq in local_cooccurences.items():
-            cooccurence_counts[(c1,c2)] -= local_freq * chunk_count
-    
-    def add_counts(chunk, chunk_id):
-        local_cooccurences = defaultdict(int)
-        for c1,c2 in zip(chunk,chunk[1:]):
-            local_cooccurences[(c1,c2)]+=1
-        
-        chunk_count = counts[chunk]
-        for (c1,c2), local_freq in local_cooccurences.items():
-            cooccurence_counts[(c1,c2)] += local_freq * chunk_count
-            cooccurence_to_chunk_ids[(c1,c2)].add(chunk_id)
-        
+                aggregated_cooccurences[(c1,c2)]+=count
+        return aggregated_cooccurences
 
+    def merge_counts(counts, target_pair, vocab_idx):
+        new_counts = {}
+        for chunk, count in counts.items():
+            new_chunk = []
+            i = 0
+            while i < len(chunk):
+                if i+1 < len(chunk) and (chunk[i],chunk[i+1]) == target_pair:
+                    new_chunk.append(vocab_idx)
+                    i+=2
+                else:
+                    new_chunk.append(chunk[i])
+                    i+=1
+            new_counts[tuple(new_chunk)] = count
+        # print(new_counts)
+        return new_counts
 
     vocab = {idx : bytes([idx]) for idx in range(256)} # (vocab idx -> byte tuple)
     merges = []
     iterations = vocab_size - 256 - len(special_tokens)
     new_vocab_idx = 256
-    cooccurence_counts, cooccurence_to_chunk_ids, id_to_chunk = get_stats(counts) # get occurences one time only
-    
     for i in range(iterations):
+        aggregated_cooccurences = get_stats(counts)
         # pick the max occurence and in case of tie, the lexiographically largest. very important you compare elementwise of the tuple and not the concatenated 
-        top_pair = max(cooccurence_counts, key = lambda k: (cooccurence_counts[k], vocab[k[0]],vocab[k[1]]))
-        # print(f'top pair for round {i} is {vocab[top_pair[0]] + vocab[top_pair[1]]} with count {cooccurence_counts[top_pair]}')
-        # print(f'the number of chunks are related to this pair',len(cooccurence_to_chunk_ids[top_pair]))
-        
-        # adjust global counts by examining all chunks top_pair is in
-        chunk_ids = list(cooccurence_to_chunk_ids[top_pair])
-        for chunk_id in chunk_ids:
-            chunk = id_to_chunk[chunk_id]
-            # decrement the contribution to global count of ALL co-occurence in this chunk  
-            remove_counts(chunk,chunk_id)
-        
-            new_chunk = []
-            j = 0
-            while j < len(chunk):
-                if j+1 < len(chunk) and (chunk[j],chunk[j+1]) == top_pair:
-                    new_chunk.append(new_vocab_idx)
-                    j+=2
-                else:
-                    new_chunk.append(chunk[j])
-                    j+=1
-            id_to_chunk[chunk_id] = tuple(new_chunk)
-            counts[tuple(new_chunk)] = counts[chunk] 
-
-            # add back the contribution to global count of every co-occurence for the new merged chunk that now excludes top pair 
-            add_counts(id_to_chunk[chunk_id], chunk_id)
-
-        # top pair is no longer a cooccurence
-        del cooccurence_counts[top_pair]
-        del cooccurence_to_chunk_ids[top_pair]
-
+        top_pair = max(aggregated_cooccurences, key = lambda k: (aggregated_cooccurences[k], vocab[k[0]],vocab[k[1]]))
+        # print(f'top pair for round {i} is {vocab[top_pair[0]] + vocab[top_pair[1]]} with count {aggregated_cooccurences[top_pair]}')
         
         vocab[new_vocab_idx] = vocab[top_pair[0]] + vocab[top_pair[1]]  # concatenate the bytes
         merges.append((vocab[top_pair[0]],vocab[top_pair[1]]))
         
+        counts = merge_counts(counts,top_pair,new_vocab_idx)
         new_vocab_idx +=1
 
     # add special tokens to vocabulary

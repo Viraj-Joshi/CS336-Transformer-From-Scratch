@@ -1,12 +1,30 @@
 text = "Ｕｎｉｃｏｄｅ! 🅤🅝🅘🅒🅞🅓🅔‽ 🇺‌🇳‌🇮‌🇨‌🇴‌🇩‌🇪! 😄 The very name strikes fear and awe into the hearts of programmers worldwide. We all know we ought to “support Unicode” in our software (whatever that means—like using wchar_t for all the strings, right?). But Unicode can be abstruse, and diving into the thousand-page Unicode Standard plus its dozens of supplementary annexes, reports, and notes can be more than a little intimidating. I don’t blame programmers for still finding the whole thing mysterious, even 30 years after Unicode’s inception."
+codepoints = [ord(c) for c in text]
+print('codepoints of text',codepoints)
+'''
+a string can be defined as a sequence of integers b/c the Unicode standard defines a mapping
+from each character to a integer, called a codepoint. This can be found as ord(c)
+They are 21-bit integers with 159,801 valid value 
+'''
+
+'''
+We could use this to define our vocabulary, but it is impractical for a vocabulary due to size and sparsity.
+
+Instead, Unicode defines three different encodings (UTF-8,16,32) which converts a character to a sequence of bytes.
+'''
 tokens = text.encode("utf-8") # raw bytes
 tokens = list(map(int, tokens)) # convert to a list of integers in range 0..255 for convenience
+
+
 print('---')
-print(text)
-print("length:", len(text))
+print("text length:", len(text))
 print('---')
 print(tokens)
-print("length:", len(tokens))
+print("utf-8 encoded byte length:", len(tokens))
+
+'''
+see how much longer the utf8 encoded text is in exchange for a smaller vocabulary of 256.
+'''
 
 from collections import defaultdict
 m = defaultdict(int)

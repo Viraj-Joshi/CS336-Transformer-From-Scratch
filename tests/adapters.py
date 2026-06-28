@@ -561,9 +561,7 @@ def get_tokenizer(
     """
     raise NotImplementedError
 
-import json
-import regex as re
-from collections import defaultdict
+from cs336_basics.train_bpe import train_bpe
 
 def run_train_bpe(
     input_path: str | os.PathLike,
@@ -592,66 +590,8 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    ### PRETOKENIZE ###
-    PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-    counts = defaultdict(int) # map tuples of pretokenized chunks to frequencies
-    with open(input_path, "r", encoding="utf-8") as file:
-        content = file.read()
-        ### SPLIT BY SPECIAL TOKENS
-        SPECIAL_PAT = "|".join(re.escape(spt) for spt in special_tokens)
-        chunks = re.split(SPECIAL_PAT,content)
-        for chunk in chunks:
-            for c in re.finditer(PAT, chunk): # finditer is an iterator over matches
-                group = c.group().encode('utf-8')
-                counts[tuple(group)] += 1       # tuple converts bytes to tuple of ints
-    # print(counts)
     
-    ### BPE over each pretokenized chunk (different than special token chunks)
-
-    # get co-occurences by counting over all byte pairs
-    def get_stats(counts):
-        aggregated_cooccurences = defaultdict(int)
-        for key,count in counts.items():
-            for c1,c2 in zip(key,key[1:]):
-                aggregated_cooccurences[(c1,c2)]+=count
-        return aggregated_cooccurences
+    return train_bpe(input_path, vocab_size, special_tokens)
     
-    def merge_counts(counts, target_pair, vocab_idx):
-        new_counts = {}
-        for chunk, count in counts.items():
-            new_chunk = []
-            i = 0
-            while i < len(chunk):
-                if i+1 < len(chunk) and (chunk[i],chunk[i+1]) == target_pair:
-                    new_chunk.append(vocab_idx)
-                    i+=2
-                else:
-                    new_chunk.append(chunk[i])
-                    i+=1
-            new_counts[tuple(new_chunk)] = count
-        # print(new_counts)
-        return new_counts
-
-    vocab = {idx : bytes([idx]) for idx in range(256)} # (vocab idx -> byte tuple)
-    merges = []
-    iterations = vocab_size - 256 - len(special_tokens)
-    for i in range(iterations):
-        aggregated_cooccurences = get_stats(counts)
-        # pick the max occurence and in case of tie, the lexiographically largest. very important you compare elementwise of the tuple and not the concatenated 
-        top_pair = max(aggregated_cooccurences, key = lambda k: (aggregated_cooccurences[k], vocab[k[0]],vocab[k[1]]))
-        # print(f'top pair for round {i} is {vocab[top_pair[0]] + vocab[top_pair[1]]} with count {aggregated_cooccurences[top_pair]}')
-        
-        new_vocab_idx = 256+i
-        vocab[new_vocab_idx] = vocab[top_pair[0]] + vocab[top_pair[1]]  # concatenate the bytes
-        merges.append((vocab[top_pair[0]],vocab[top_pair[1]]))
-        
-        counts = merge_counts(counts,top_pair,new_vocab_idx)
-    
-    # add special tokens to vocabulary
-    for i in range(len(special_tokens)):
-        new_vocab_idx+=1
-        vocab[new_vocab_idx] = special_tokens[i].encode('utf-8')
-
-    return vocab, merges
     
 

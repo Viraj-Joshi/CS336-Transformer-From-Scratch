@@ -5,7 +5,7 @@ import json
 import pickle
 
 if __name__ == "__main__":
-    input_path = "data/TinyStoriesV2-GPT4-train.txt"
+    input_path = "data/owt_train.txt"
     start_time = time.time()
     vocab, merges = train_bpe(
         input_path=input_path,
@@ -18,8 +18,8 @@ if __name__ == "__main__":
 
     # save output
     output_dir = '.'
-    vocab_path = os.path.join(output_dir, "tinystories_bpe_vocab.pkl")
-    merges_path = os.path.join(output_dir, "tinystories_bpe_merges.pkl")
+    vocab_path = os.path.join(output_dir, "owt_bpe_vocab.pkl")
+    merges_path = os.path.join(output_dir, "owt_bpe_merges.pkl")
     with open(vocab_path, "wb") as f:
         pickle.dump(vocab, f)
     with open(merges_path, "wb") as f:

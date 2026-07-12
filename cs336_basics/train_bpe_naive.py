@@ -76,41 +76,27 @@ def process_chunk(
         f.seek(start)
         content = f.read(end - start).decode("utf-8", errors="ignore")
         ### SPLIT BY SPECIAL TOKENS that could still be in the chunk
-        chunks = re.split(SPECIAL_PAT,content)
-        for chunk in chunks:
-            for c in re.finditer(PAT, chunk):           # finditer is an iterator over matches
+        splits_by_spt = re.split(SPECIAL_PAT,content)
+        for split in splits_by_spt:
+            for c in re.finditer(PAT, split):           # split by PAT uisng finditer, an iterator over matches
                 group = c.group().encode('utf-8')
                 local_counts[tuple(group)] += 1         # tuple converts bytes to tuple of ints
     return local_counts
 
 ### PRETOKENIZE ###
-def naive_pretokenize(input_path, special_tokens):
+def naive_pretokenize(input_path,special_tokens):
     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
     SPECIAL_PAT = "|".join(re.escape(spt) for spt in special_tokens)
-    counts = defaultdict(int) # map tuples of pretokenized chunks to frequencies
+    counts = defaultdict(int) # map tuples of pretokenized splits to frequencies
     with open(input_path, "r", encoding="utf-8") as file:
         content = file.read()
         ### SPLIT BY SPECIAL TOKENS
         SPECIAL_PAT = "|".join(re.escape(spt) for spt in special_tokens)
-        chunks = re.split(SPECIAL_PAT,content)
-        for chunk in chunks:
-            for c in re.finditer(PAT, chunk): # finditer is an iterator over matches
+        splits_by_spt = re.split(SPECIAL_PAT,content)
+        for split in splits_by_spt:
+            for c in re.finditer(PAT, split): # finditer is an iterator over matches
                 group = c.group().encode('utf-8')
                 counts[tuple(group)] += 1       # tuple converts bytes to tuple of ints
-    return counts
-
-
-def parallel_pretokenize(input_path,special_tokens,num_processes):
-    counts = defaultdict(int) # global map tuples of pretokenized chunks to frequencies
-
-    with open(input_path, "rb") as f:
-        boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
-    
-    with Pool(num_processes) as pool:
-        results = pool.starmap(process_chunk, [(input_path, special_tokens, start, end) for start, end in zip(boundaries[:-1], boundaries[1:])])
-        for r in results:
-            for k, v in r.items():
-                counts[k] += v 
     return counts
 
 def train_bpe(
@@ -140,7 +126,6 @@ def train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    
     # for small files, no need for multiprocessing
     file_size = os.path.getsize(input_path) # get file size in bytes
     if file_size < 1_000_000:
@@ -150,7 +135,7 @@ def train_bpe(
 
     ### BPE over each pretokenized chunks (different than splitting by special tokens)
 
-    # get co-occurences by counting over all byte pairs
+    # get co-occurences by counting all byte pairs over the corpus
     def get_stats(counts):
         aggregated_cooccurences = defaultdict(int)
         for key,count in counts.items():
